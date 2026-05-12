@@ -1,0 +1,27 @@
+info:
+  name: EDIT POST
+  type: http
+  seq: 1
+
+http:
+  method: PUT
+  url: "{{baseURL}}/1"
+  body:
+    type: json
+    data: |-
+      {
+        "question": "How to deal with Cassiopeia Ultimate?",
+        "answer": "Turn your champion away from her when she casts ultimate",
+        "keywords": [
+          "Ultimate",
+          "champion",
+          "unique"
+        ]
+      }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

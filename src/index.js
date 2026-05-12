@@ -1,15 +1,16 @@
 const express = require('express');
-
 const app = express();
+const quizRouter = require("./routes/quiz");
 const PORT = process.env.PORT || 3000;
 
 // Middleware to parse JSON bodies (will be useful in later steps)
 app.use(express.json());
 
-// Hello World route
-app.get('/', (req, res) => {
-  res.json({ message: 'Hello, World!' });
-});
+app.use("/api/quiz", quizRouter);
+
+app.use((req,res) =>{
+    res.status(404).json({msq : "Not found"})
+})
 
 // Health check route
 app.get('/health', (req, res) => {
