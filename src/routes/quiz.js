@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const quiz = require('../data/quiz');
-const prisma = require('../lib/prisma')
+const prisma = require('../lib/prisma.js')
 const authenticate = require("../middleware/auth");
 const isOwner = require("../middleware/isOwner");
 
@@ -9,30 +9,39 @@ function formatQuiz(LOLQuiz) {
   return {
     ...LOLQuiz,
     keywords: LOLQuiz.keywords.map((k) => k.name),
+    userName: LOLQuiz.user ? LOLQuiz.user.name : null,
+    user: undefined,
   };
 }
 
 router.use(authenticate);
  
 
-// GET /api/quiz or /api/quiz?keyword=ability
+// GET /api/quiz or /api/quiz?keyword=ability&page=1&\limit=5
 router.get("/", async (req,res) =>{
     const {keyword} = req.query;
 
     const where = keyword ? 
     {keywords : {some: {name: keyword}}} : {};
 
-    const filteredQuiz = await prisma.LOLQuiz.findMany({
+    const page = Math.max(1,parseInt(req.query.page) || 1);
+    const limit = Math.min(1,Math.min(100,parseInt(req.query.limit) || 5));
+    const skip = (page -1) * limit;
+
+    const [filteredQuiz, total] = await Promise.all([prisma.LOLQuiz.findMany({
         where,
         include:{keywords: true},
-        orderBy: {id : "asc"}
-    });
-
-   /* if(!keyword){
-    return res.json(quiz);
-    } old filter code
-    const filteredQuiz = quiz.filter(q=>q.keywords.includes(keyword));*/
-    res.json(filteredQuiz.map(formatQuiz));
+        orderBy: {id : "asc"},
+        skip,
+        take: limit
+    }), await prisma.LOLQuiz.count({where})]);
+    res.json({
+      data: filteredQuiz.map(formatQuiz),
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+    })
 
 
 })
@@ -43,7 +52,7 @@ router.get("/:quizId", async (req,res)=>{
     const quizId = Number(req.params.quizId);
     const LOLQuiz = await prisma.LOLQuiz.findUnique({
     where: { id: LOLQuizId },
-    include: { keywords: true },
+    include: { keywords: true, user: true},
   });
 
     if(!LOLQuiz){
@@ -108,7 +117,7 @@ if(!LOLQuiz){
         })),
       },
     },
-    include: { keywords: true },
+    include: { keywords: true, user: true },
   });
   res.json(formatQuiz(updatedQuiz));
 
@@ -120,7 +129,7 @@ router.delete("/:quizId",isOwner, async (req, res) =>{
     const quizId = Number(req.params.quizId);
     const quiz = await prisma.quiz.findUnique({
     where: { id: quizId },
-    include: { keywords: true },
+    include: { keywords: true , user: true},
   });
 
 
