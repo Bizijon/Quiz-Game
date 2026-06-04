@@ -4,13 +4,39 @@ const quiz = require('../data/quiz');
 const prisma = require('../lib/prisma.js')
 const authenticate = require("../middleware/auth");
 const isOwner = require("../middleware/isOwner");
+const multer = require("multer");
+const path = require("path");
+
+
+const storage = multer.diskStorage({
+  destination: path.join(__dirname,"..","..","public","uploads"),
+  filename:(req,res,cb)=>{
+    const ext = path.extName(file.originalname);
+    const newName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`;
+    cb(null,newName);
+  }
+
+});
+
+const upload = multer({
+       storage,
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith("image/")) cb(null, true);
+    else cb(new Error("Only image files are allowed"));
+  },
+  limits: { fileSize: 5 * 1024 * 1024 },
+    })
 
 function formatQuiz(LOLQuiz) {
   return {
     ...LOLQuiz,
     keywords: LOLQuiz.keywords.map((k) => k.name),
     userName: LOLQuiz.user ? LOLQuiz.user.name : null,
+    attempts: LOLQuiz.attempts && LOLQuiz.attempts.length > 0,
+    attemptCount: LOLQuiz._count.attempts ?? 0,
     user: undefined,
+    _count: undefined,
+    attempts: undefined,
   };
 }
 
@@ -30,7 +56,14 @@ router.get("/", async (req,res) =>{
 
     const [filteredQuiz, total] = await Promise.all([prisma.LOLQuiz.findMany({
         where,
-        include:{keywords: true},
+        include:{
+          keywords: true,
+          user: true,
+          attempts: {where : {userId: req.user.userId}},
+          _count: {select: {attempts: true}}
+
+          },
+
         orderBy: {id : "asc"},
         skip,
         take: limit
@@ -53,16 +86,18 @@ router.get("/:quizId", async (req,res)=>{
     const LOLQuiz = await prisma.LOLQuiz.findUnique({
     where: { id: LOLQuizId },
     include: { keywords: true, user: true},
+    attempts: {where : {userId: req.user.userId}},
+    _count: {select: {attempts: true}}
   });
 
     if(!LOLQuiz){
-        res.status(404).json({msg: "Can't find post lil bro"})
+        res.status(404).json({msg: "Can't find post."})
     }
 
     res.json(formatQuiz);
 })
 
-router.post("/", async (req,res)=>{
+router.post("/", upload.single("image"), async (req,res)=>{
     const {question,answer,keywords} = req.body;
     if(!question || !answer || !keywords ){
         return res.status(400).json({msg: "ALL BODY PARTS REQUIRED >:)"})
@@ -70,12 +105,14 @@ router.post("/", async (req,res)=>{
 
     const keywordsArray = Array.isArray(keywords) ? keywords : [];
 
+    const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
+
     const existingIds = quiz.map(q=>q.id); 
     const maximumId = Math.max(...existingIds);
 
     const newQuiz = await prisma.quiz.create({
     data: {
-      question, answer,
+      question, answer, imageUrl,
       userId: req.user.userId,
       keywords: {
         connectOrCreate: keywordsArray.map((kw) => ({
@@ -90,7 +127,7 @@ router.post("/", async (req,res)=>{
 });
 
 //PUT /api/quiz/:quizId
-router.put("/:quizId", isOwner, async (req,res) =>{
+router.put("/:quizId", isOwner,upload.single("image"), async (req,res) =>{
 
 const quizId = Number(req.params.quizId);
 const {question,answer,keywords} = req.body;
@@ -98,17 +135,18 @@ const {question,answer,keywords} = req.body;
 const quiz = await prisma.quiz.findUnique({ where: { id: quizId } });
 
 if(!LOLQuiz){
-    res.status(404).json({msg: "Can't find post lil bro"})
+    res.status(404).json({msg: "Can't find post"})
     }
 
     if(!question || !answer || !keywords ){
         return res.status(400).json({msg: "ALL BODY PARTS REQUIRED >:)"})
     }
+    const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
     const keywordsArray = Array.isArray(keywords) ? keywords : [];
     const updatedQuiz = await prisma.quiz.update({
     where: { id: quizId },
     data: {
-      question, answer,
+      question, answer,imageUrl,
       keywords: {
         set: [],
         connectOrCreate: keywordsArray.map((kw) => ({
@@ -117,7 +155,11 @@ if(!LOLQuiz){
         })),
       },
     },
-    include: { keywords: true, user: true },
+    include: { keywords: true,
+       user: true,
+      attempts:{where: {userId: req.user.userId}, take: 1},
+    _count:{select: {attempts: true}} 
+  },
   });
   res.json(formatQuiz(updatedQuiz));
 
@@ -129,7 +171,10 @@ router.delete("/:quizId",isOwner, async (req, res) =>{
     const quizId = Number(req.params.quizId);
     const quiz = await prisma.quiz.findUnique({
     where: { id: quizId },
-    include: { keywords: true , user: true},
+    include: { keywords: true ,
+       user: true,
+      attempts:{where: {userId: req.user.userId}, take: 1},
+    _count:{select: {attempts: true}}},
   });
 
 
@@ -143,6 +188,60 @@ router.delete("/:quizId",isOwner, async (req, res) =>{
     res.json({
         msg:"Quiz deleted successfully",
         LolQuiz : formatQuiz})
+})
+
+//Post /api/:quizId/attempt
+router.post("/:quizId/attempts", async (req, res) => {
+  const quizId = Number(req.params.quizId);
+  const LolQuiz = await prisma.LOLQuiz.findUnique({where: {id : quizId}})
+
+  if(!LolQuiz){
+    return res.status(404).json({ message: "Quiz not found" });
+  }
+
+  const attempt = await prisma.attempt.upsert({
+    where : {userId_quizId:{userId: req.user.userId, quizId}},
+    update : {},
+    create : {userId: req.user.userId, quizId},
+  });
+
+  const attemptCount = await prisma.attempt.count({
+    where: {quizId},
+  })
+
+  res.status(201).json({
+    id:attempt.id,
+    quizId,
+    attempted: true,
+    attemptCount,
+    createdAt: attempt.createdAt,
+  })
+
+})
+
+//Delete /api/:quizId/attempt
+router.delete("/:quizId/attempts", async (req, res) => {
+  const quizId = Number(req.params.quizId);
+  const LolQuiz = await prisma.LOLQuiz.findUnique({where: {id : quizId}})
+
+  if(!LolQuiz){
+    return res.status(404).json({ message: "Quiz not found" });
+  }
+
+  const attempt = await prisma.attempt.deleteMany({
+    where : {userId: req.user.userId, quizId},
+  });
+
+  const attemptCount = await prisma.attempt.count({
+    where: {quizId},
+  })
+
+  res.json({
+    quizId,
+    attempted: false,
+    attemptCount,
+  })
+
 })
 
 module.exports = router;

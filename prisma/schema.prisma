@@ -14,42 +14,51 @@ model User {
   name     String @db.VarChar(100)
   quiz    LOLQuiz[]
   attempts Attempt[]
-
-  @@map("users") 
+  @@map("users")
 }
 
 
-
-
-
 model LOLQuiz {
-  id       Int       @id @default(autoincrement())
-  question    String    @db.VarChar(255)
-  answer  String    @db.Text
-  keywords Keyword[]
+  id       Int    @id @default(autoincrement())
+  question String @db.VarChar(255)
+  answer   String @db.Text
   userId   Int
   user     User @relation(fields: [userId], references: [id])
+  keywords Keyword[]
   attempts Attempt[]
+  imageUrl String? @db.VarChar(255)
+
   @@map("quiz")
 }
 
 model Keyword {
-  id    Int    @id @default(autoincrement())
-  name  String @unique @db.VarChar(100)
+  id   Int    @id @default(autoincrement())
+  name String @unique @db.VarChar(100)
   quiz LOLQuiz[]
 
   @@map("keywords")
 }
 
+
+model keywordtololquiz {
+  A Int
+  B Int
+
+  @@unique([A, B], map: "_KeywordToLOLQuiz_AB_unique")
+  @@index([B], map: "_KeywordToLOLQuiz_B_index")
+  @@map("_keywordtololquiz")
+}
+
+
 model Attempt {
-  id       Int    @id @default(autoincrement())
+  id        Int      @id @default(autoincrement())
   createdAt DateTime @default(now())
-  userId Int
-  user     User @relation(fields: [userId], references: [id])
-  LOLQuizId Int
-  quiz    LOLQuiz @relation(fields: [LOLQuizId], references: [id])
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id])
+  LOLQuizId    Int
+  LOLQuiz    LOLQuiz     @relation(fields: [LOLQuizId], references: [id])
 
   @@unique([userId, LOLQuizId])
-  @@map("attempts") 
+  @@map("attempts")
 }
 

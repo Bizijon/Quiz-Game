@@ -2,6 +2,8 @@ const express = require('express');
 const app = express();
 const quizRouter = require("./routes/quiz");
 const authRouter = require("./routes/auth");
+const path = require("path");
+app.use(express.static(path.join(__dirname, "..","public")));
 
 const PORT = process.env.PORT || 3000;
 
