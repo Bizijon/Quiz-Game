@@ -6,8 +6,14 @@ const authenticate = require("../middleware/auth");
 const isOwner = require("../middleware/isOwner");
 const multer = require("multer");
 const path = require("path");
+const {NotFoundError, ValidationError} = require("../lib/errors")
+const {z} = require("zod");
 
-
+const QuizInput = z.object({
+  question: z.string().min(1),
+  answer: z.string().min(1),
+  keywords:z.union([z.string(),z.array(z.string())]).optional()
+})
 const storage = multer.diskStorage({
   destination: path.join(__dirname,"..","..","public","uploads"),
   filename:(req,res,cb)=>{
@@ -91,17 +97,17 @@ router.get("/:quizId", async (req,res)=>{
   });
 
     if(!LOLQuiz){
-        res.status(404).json({msg: "Can't find post."})
+        throw new NotFoundError("Post not found");
     }
 
     res.json(formatQuiz);
 })
 
 router.post("/", upload.single("image"), async (req,res)=>{
-    const {question,answer,keywords} = req.body;
-    if(!question || !answer || !keywords ){
-        return res.status(400).json({msg: "ALL BODY PARTS REQUIRED >:)"})
-    }
+    
+  
+    const {question,answer,keywords} = QuizInput.parse(req.body);
+    
 
     const keywordsArray = Array.isArray(keywords) ? keywords : [];
 
@@ -130,16 +136,16 @@ router.post("/", upload.single("image"), async (req,res)=>{
 router.put("/:quizId", isOwner,upload.single("image"), async (req,res) =>{
 
 const quizId = Number(req.params.quizId);
-const {question,answer,keywords} = req.body;
+const {question,answer,keywords} = QuizInput.parse(req.body);
 
 const quiz = await prisma.quiz.findUnique({ where: { id: quizId } });
 
 if(!LOLQuiz){
-    res.status(404).json({msg: "Can't find post"})
+    throw new NotFoundError("Post not found");
     }
 
     if(!question || !answer || !keywords ){
-        return res.status(400).json({msg: "ALL BODY PARTS REQUIRED >:)"})
+       throw new ValidationError("ALL BODY PARTS REQUIRED")
     }
     const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
     const keywordsArray = Array.isArray(keywords) ? keywords : [];
@@ -179,7 +185,7 @@ router.delete("/:quizId",isOwner, async (req, res) =>{
 
 
     if (!quiz) {
-    return res.status(404).json({ message: "Quiz not found" });
+    throw new NotFoundError("Quiz not found.");
   }
 
 
@@ -196,7 +202,7 @@ router.post("/:quizId/attempts", async (req, res) => {
   const LolQuiz = await prisma.LOLQuiz.findUnique({where: {id : quizId}})
 
   if(!LolQuiz){
-    return res.status(404).json({ message: "Quiz not found" });
+    throw new NotFoundError("Quiz not found.");
   }
 
   const attempt = await prisma.attempt.upsert({
@@ -225,7 +231,7 @@ router.delete("/:quizId/attempts", async (req, res) => {
   const LolQuiz = await prisma.LOLQuiz.findUnique({where: {id : quizId}})
 
   if(!LolQuiz){
-    return res.status(404).json({ message: "Quiz not found" });
+   throw new NotFoundError("Quiz not found.");
   }
 
   const attempt = await prisma.attempt.deleteMany({
